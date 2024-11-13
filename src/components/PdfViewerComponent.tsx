@@ -65,15 +65,13 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
 
       instance.setAnnotationCreatorName(Math.random().toString(36).substring(2, 15));
 
-      yArray.delete(0, yArray.length);
+      // yArray.delete(0, yArray.length);
 
       // Observe changes to annotations in Yjs
-      yArray.observe(async (event, transaction) => {
+      yArray.observe(async (event) => {
         if (event.target !== yArray || isHandlingPSPDFKitChange.current) return;
 
         isHandlingYjsChange.current = true;
-
-        console.log('transaction', transaction.origin);
 
         console.log('yArray changed', event.changes.delta);
 
