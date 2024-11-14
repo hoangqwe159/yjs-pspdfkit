@@ -13,6 +13,7 @@
     "pspdfkit": "^2024.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-yjs": "^2.0.1",
     "y-indexeddb": "^9.0.12",
     "y-webrtc": "^10.3.0",
     "y-websocket": "^2.0.4",
