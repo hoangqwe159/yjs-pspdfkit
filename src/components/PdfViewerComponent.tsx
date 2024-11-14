@@ -53,7 +53,7 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
   }, [document]);
 
   useEffect(() => {
-    if (!instance || !yAnnotations.length) return;
+    if (!instance) return;
 
     if (isReady) return;
 
