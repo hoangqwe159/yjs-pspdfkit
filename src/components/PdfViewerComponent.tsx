@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { useY } from "react-yjs";
+import { WebrtcProvider } from "y-webrtc";
 
 interface PdfViewerComponentProps {
   document: string;
@@ -12,9 +13,13 @@ interface PdfViewerComponentProps {
 const yDoc = new Y.Doc();
 const yArray = yDoc.getArray<AnnotationsBackendJSONUnion>('annotations');
 
+// const provider = new WebrtcProvider('annotationss', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] });
+
+
 export default function PdfViewerComponent({ document }: PdfViewerComponentProps) {
   const indexeddbProvider = useMemo(() => new IndexeddbPersistence('annotations', yDoc), []);
-  const websocketProvider = useMemo(() => new WebsocketProvider('ws://localhost:1234/ws', 'annotations', yDoc), []);
+  // const websocketProvider = useMemo(() => new WebsocketProvider('ws://localhost:1234/ws', 'annotations', yDoc), []);
+  const provider = useMemo(() => new WebrtcProvider('annotations', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] }), []);
   window.yArray = yArray;
 
   const containerRef = useRef(null);
