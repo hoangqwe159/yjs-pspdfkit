@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import PSPDFKit, { Annotation, AnnotationsBackendJSONUnion, Instance } from "pspdfkit";
+import PSPDFKit, { Annotation, AnnotationJSONUnion, AnnotationsBackendJSONUnion, Instance } from "pspdfkit";
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
@@ -10,39 +10,61 @@ interface PdfViewerComponentProps {
   document: string;
 }
 
+type Attachments1 = Record<string, {
+  binary: string;
+  contentType: string;
+}>;
+
+type Attachments = {
+  binary: string;
+  contentType: string;
+};
+
 const yDoc = new Y.Doc();
-const yArray = yDoc.getArray<AnnotationsBackendJSONUnion>('annotations');
+const yArrayAnnotations = yDoc.getArray<AnnotationJSONUnion>('annotations');
+const yMapAttachments = yDoc.getMap<Attachments>('attachments');
 
 const provider = new WebrtcProvider('annotationss', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] });
-
 
 export default function PdfViewerComponent({ document }: PdfViewerComponentProps) {
   const indexeddbProvider = useMemo(() => new IndexeddbPersistence('annotations', yDoc), []);
   // const websocketProvider = useMemo(() => new WebsocketProvider('ws://localhost:1234/ws', 'annotations', yDoc), []);
   // const provider = useMemo(() => new WebrtcProvider('annotations', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] }), []);
-  window.yArray = yArray;
+  window.yArray = yArrayAnnotations;
+  window.yMap = yMapAttachments;
+
 
   const containerRef = useRef(null);
   const isHandlingYjsChange = useRef(false);
   const isHandlingPSPDFKitChange = useRef(false);
   const [isReady, setIsReady] = useState(false);
 
-  const yAnnotations = useY(yArray);
+  const yAnnotations = useY(yArrayAnnotations);
+  const yAttachments = useY(yMapAttachments);
+
   const [instance, setInstance] = useState<Instance | null>(null);
+
+  useEffect(() => {
+    indexeddbProvider.on('synced', () => {
+      setIsReady(true);
+    });
+  }, [indexeddbProvider]);
+
 
   useEffect(() => {
     const container = containerRef.current;
 
     (async function () {
-      if (!container  ) return;
+      if (!container || !isReady) return;
       PSPDFKit.unload(container); // Ensure that there's only one PSPDFKit instance.
 
       const instance = await PSPDFKit.load({
         container,
-        // instantJSON: {
-        //   annotations: yArray.toArray(),
-        //   format: "https://pspdfkit.com/instant-json/v1",
-        // },
+        instantJSON: {
+          attachments: yMapAttachments.toJSON(),
+          annotations: yArrayAnnotations.toArray(),
+          format: "https://pspdfkit.com/instant-json/v1",
+        },
         document: "/document.pdf",
         baseUrl: `${window.location.protocol}//${window.location.host}/`,
       });
@@ -55,35 +77,65 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
     return () => {
       PSPDFKit.unload(container);
     };
-  }, [document]);
+  }, [document, isReady]);
 
-  useEffect(() => {
-    if (!instance) return;
+  // useEffect(() => {
+  //   if (!instance) return;
 
-    if (isReady) return;
+  //   if (isReady) return;
 
-    (async function  loadInstantJson() {
-      await instance.applyOperations([
-        {
-          type: 'applyInstantJson',
-          instantJson: {
-            annotations: yAnnotations,
-            format: "https://pspdfkit.com/instant-json/v1",
-          },
-        },
-      ]);
+  //   (async function  loadInstantJson() {
+  //     await instance.applyOperations([
+  //       {
+  //         type: 'applyInstantJson',
+  //         instantJson: {
+  //           attachments: yAttachments,
+  //           annotations: yAnnotations,
+  //           format: "https://pspdfkit.com/instant-json/v1",
+  //         },
+  //       },
+  //     ]);
 
-      setIsReady(true);
-    })();
-  }, [instance, yAnnotations, isReady]);
+  //     setIsReady(true);
+  //   })();
+  // }, [instance, yAnnotations, isReady, yAttachments]);
 
   useEffect(() => {
     if (!instance) return;
     if (!isReady) return;
 
+    yMapAttachments.observe(async (event) => {
+      if (event.target !== yMapAttachments || isHandlingPSPDFKitChange.current) return;
 
-    yArray.observe(async (event) => {
-      if (event.target !== yArray || isHandlingPSPDFKitChange.current) return;
+      // isHandlingYjsChange.current = true;
+      // console.log('yMap changed', event.changes);
+
+      // await instance.applyOperations([
+      //   {
+      //     type: 'applyInstantJson',
+      //     instantJson: {
+      //       attachments: yMapAttachments.toJSON(),
+      //       format: "https://pspdfkit.com/instant-json/v1",
+      //     },
+      //   },
+      // ])
+
+      // for (const key of event.changes.keys) {
+      //   const attachment = yMapAttachments.get(key);
+      //   if (!attachment) continue;
+
+      //   const blob = new Blob([attachment.binary], { type: attachment.contentType });
+      //   const binary = await blobToBinary(blob);
+
+      //   instance.getAttachment(key, binary);
+      // }
+
+      isHandlingYjsChange.current = false;
+    });
+
+
+    yArrayAnnotations.observe(async (event) => {
+      if (event.target !== yArrayAnnotations || isHandlingPSPDFKitChange.current) return;
 
       isHandlingYjsChange.current = true;
 
@@ -103,7 +155,7 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
       }
 
       for (const item of updatedItems) {
-        const annotation = backendJsonToAnnotation(item);
+        const annotation = await backendJsonToAnnotation(item, instance);
         if (!annotation) continue;
 
         await instance.update(annotation);
@@ -112,7 +164,7 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
 
       const addedChanges = [];
       for (const item of filteredAddedItems) {
-        const annotation = backendJsonToAnnotation(item);
+        const annotation = await backendJsonToAnnotation(item, instance);
         if (!annotation) continue;
 
         addedChanges.push(annotation);
@@ -129,12 +181,12 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
       isHandlingPSPDFKitChange.current = true;
       try {
         annotations.forEach((annotation) => {
-          const jsonAnnotation = PSPDFKit.Annotations.toSerializableObject(annotation) as AnnotationsBackendJSONUnion;
-          const index = yArray.toArray().findIndex((a) => a.id === jsonAnnotation.id);
+          const jsonAnnotation = PSPDFKit.Annotations.toSerializableObject(annotation);
+          const index = yArrayAnnotations.toArray().findIndex((a) => a.id === jsonAnnotation.id);
           if (index !== -1) {
             yDoc.transact(() => {
-              yArray.delete(index, 1);
-              yArray.insert(index, [jsonAnnotation]);
+              yArrayAnnotations.delete(index, 1);
+              yArrayAnnotations.insert(index, [jsonAnnotation]);
             });
           }
         });
@@ -150,20 +202,66 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
     });
 
     // Handle annotation creation from PSPDFKit
-    instance.addEventListener('annotations.create', (annotations) => {
+    instance.addEventListener('annotations.create', async (annotations) => {
       if (isHandlingYjsChange.current) return;
 
       isHandlingPSPDFKitChange.current = true;
       try {
-        yDoc.transact(() => {
+
+        const mediaIds: string[] = [];
+        yDoc.transact(async () => {
           const jsonAnnotations = [];
           for (const annotation of annotations) {
-            const jsonAnnotation = PSPDFKit.Annotations.toSerializableObject(annotation);
+            const jsonAnnotation = PSPDFKit.Annotations.toSerializableObject(annotation) as AnnotationJSONUnion;
+
+            if (jsonAnnotation.type === 'pspdfkit/image') {
+              if (jsonAnnotation.imageAttachmentId) {
+                const blob = await instance.getAttachment(jsonAnnotation.imageAttachmentId);
+                const binary = await blobToBase64(blob);
+                const instantJson = await instance.exportInstantJSON();
+
+                jsonAnnotation.customData = {
+                  [jsonAnnotation.imageAttachmentId]: {
+                    binary,
+                    contentType: blob.type,
+                  }
+                }
+
+                if (instantJson.attachments) {
+                  yMapAttachments.set(jsonAnnotation.imageAttachmentId, {
+                    binary: instantJson.attachments[jsonAnnotation.imageAttachmentId].binary,
+                    contentType: instantJson.attachments[jsonAnnotation.imageAttachmentId].contentType,
+                  });
+                }
+              }
+            } else if (jsonAnnotation.type === 'pspdfkit/media') {
+              if (jsonAnnotation.mediaAttachmentId) mediaIds.push(jsonAnnotation.mediaAttachmentId);
+            }
+
             jsonAnnotations.push(jsonAnnotation);
           }
           
-          yArray.push(jsonAnnotations);
+          yArrayAnnotations.push(jsonAnnotations);
         });
+
+        if (mediaIds.length) {
+          const instantJson  = await instance.exportInstantJSON();
+
+
+          yDoc.transact(() => {
+            for (const mediaId of mediaIds) {
+
+              if (!instantJson.attachments) return;
+              const attachment = instantJson.attachments[mediaId];
+              if (!attachment) continue;
+
+              yMapAttachments.set(mediaId, {
+                binary: attachment.binary,
+                contentType: attachment.contentType,
+              });
+            }
+          });
+        } 
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
@@ -179,9 +277,9 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
       try {
         yDoc.transact(() => {
           for (const annotation of annotations) {
-            const index = yArray.toArray().findIndex((a) => a.id === annotation.id);
+            const index = yArrayAnnotations.toArray().findIndex((a) => a.id === annotation.id);
             if (index !== -1) {
-              yArray.delete(index, 1);
+              yArrayAnnotations.delete(index, 1);
             }
           }
         });
@@ -196,7 +294,7 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
   return <div ref={containerRef} className="w-full h-full" />;
 }
 
-function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion): Annotation | undefined {
+async function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion, instance: Instance): Promise<Annotation | undefined> {
   const object = PSPDFKit.Annotations.fromSerializableObject(item);
 
   let annotation;
@@ -216,8 +314,26 @@ function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion): Annotation 
       id: item.id,
     });
   } else if (object instanceof PSPDFKit.Annotations.ImageAnnotation) {
+    let attachmentId: string | undefined;
+
+    const jsonObject = object.toJSON();
+    const currentAttachmentId = jsonObject.imageAttachmentId;
+    const currentAttachment =  await getAttachment(instance, currentAttachmentId);
+
+    if (item.customData && !currentAttachment) {
+      const key = Object.keys(item.customData)[0];
+      const attachment = item.customData[key] as Attachments;
+
+      const response = await fetch(attachment.binary);
+      const blob = await response.blob();
+
+      attachmentId = await instance.createAttachment(blob);
+
+    }
+
     annotation = new PSPDFKit.Annotations.ImageAnnotation({
-      ...object.toJSON(),
+      ...jsonObject,
+      imageAttachmentId: attachmentId ?? currentAttachmentId,
       id: item.id,
     });
   } else if (object instanceof PSPDFKit.Annotations.InkAnnotation) {
@@ -316,3 +432,26 @@ function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion): Annotation 
 // function checkIsObjectAndHasKey (item: unknown, key: string): item is Record<string, unknown> {
 //   return typeof item === 'object' && item !== null && key in item;
 // }
+
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function getAttachment(instance: Instance, attachmentId?: string | null): Promise<Blob | undefined> {
+  if (!attachmentId) return undefined;
+  try {
+    const blob = await instance.getAttachment(attachmentId);
+    return blob;
+  } catch {
+    return undefined;
+  }
+}
