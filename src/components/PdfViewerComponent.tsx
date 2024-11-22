@@ -312,7 +312,11 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
           for (const comment of comments) {
             const jsonComment = PSPDFKit.Comment.toSerializableObject(comment);
 
-            jsonComments.push(jsonComment);
+
+            jsonComments.push({
+              ...jsonComment,
+              createdAt: typeof jsonComment.createdAt === 'string' ? jsonComment.createdAt : jsonComment.createdAt.toISOString(),
+            });
           }
 
           yArrayComments.push(jsonComments);
