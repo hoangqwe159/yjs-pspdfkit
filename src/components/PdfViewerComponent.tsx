@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import PSPDFKit, { Annotation, AnnotationJSONUnion, AnnotationsBackendJSONUnion, Instance } from "pspdfkit";
+import PSPDFKit, { Annotation, AnnotationJSONUnion, AnnotationsBackendJSONUnion, Comment$1, CommentJSON, Instance } from "pspdfkit";
 import * as Y from 'yjs';
 // import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
@@ -18,9 +18,16 @@ type Attachments = {
 const yDoc = new Y.Doc();
 const yArrayAnnotations = yDoc.getArray<AnnotationJSONUnion>('annotations');
 const yMapAttachments = yDoc.getMap<Attachments>('attachments');
+const yArrayComments = yDoc.getArray<CommentJSON>('comments');
 
 const provider = new WebrtcProvider('annotationss', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] });
 const indexeddbProvider = new IndexeddbPersistence('annotations', yDoc);
+
+window.clearAll = function () {
+  yArrayAnnotations.delete(0, yArrayAnnotations.length);
+  yMapAttachments.clear();
+  yArrayComments.delete(0, yArrayComments.length);
+}
 
 
 export default function PdfViewerComponent({ document }: PdfViewerComponentProps) {
@@ -28,6 +35,7 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
   // const provider = useMemo(() => new WebrtcProvider('annotations', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] }), []);
   window.yArray = yArrayAnnotations;
   window.yMap = yMapAttachments;
+  window.yComments = yArrayComments;
   window.provider = provider;
   window.yDoc = yDoc;
 
@@ -84,6 +92,7 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
         instantJSON: {
           annotations: yArrayAnnotations.toArray(),
           attachments: yMapAttachments.toJSON(),
+          comments: yArrayComments.toArray(),
           format: "https://pspdfkit.com/instant-json/v1",
         },
         document: "/document.pdf",
@@ -103,6 +112,39 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
   useEffect(() => {
     if (!instance) return;
     if (!isReady) return;
+
+    yArrayComments.observe(async (event) => {
+      if (event.target !== yArrayComments || isHandlingPSPDFKitChange.current) return;
+
+      isHandlingYjsChange.current = true;
+
+      console.log('yArrayComments changed', event.changes.delta);
+
+      const deletedItems = Array.from(event.changes.deleted).map((item) => item.content.getContent()[0]);
+      const addedItems = Array.from(event.changes.added).map((item) => item.content.getContent()[0]);
+
+      // add the same id in deletedItems and addedItems to updatedItems
+      const updatedItems = addedItems.filter((addedItem) => deletedItems.some((deletedItem) => addedItem.id === deletedItem.id));
+      const filteredDeletedItems = deletedItems.filter((deletedItem) => !updatedItems.some((updatedItem) => updatedItem.id === deletedItem.id));
+      const filteredAddedItems = addedItems.filter((addedItem) => !updatedItems.some((updatedItem) => updatedItem.id === addedItem.id));
+
+      // for (const item of filteredDeletedItems) {
+      //   await instance.deleteComment(item.id);
+      // }
+
+      // for (const item of updatedItems) {
+      //   await instance.updateComment(item);
+      // }
+
+      for (const item of filteredAddedItems) {
+        const annotation = await backendJsonToComment(item);
+        if (!annotation) continue;
+
+        await instance.create(annotation);
+      }
+
+      isHandlingYjsChange.current = false;
+    });
 
     yArrayAnnotations.observe(async (event) => {
       if (event.target !== yArrayAnnotations || isHandlingPSPDFKitChange.current) return;
@@ -257,15 +299,58 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
         }, 100);
       }
     });
+
+    instance.addEventListener('comments.create', async (comments) => {
+      if (isHandlingYjsChange.current) return;
+
+      isHandlingPSPDFKitChange.current = true;
+
+      try {
+        yDoc.transact(() => {
+          const jsonComments = [];
+
+          for (const comment of comments) {
+            const jsonComment = PSPDFKit.Comment.toSerializableObject(comment);
+
+            jsonComments.push(jsonComment);
+          }
+
+          yArrayComments.push(jsonComments);
+        });
+      } finally {
+        setTimeout(() => {
+          isHandlingPSPDFKitChange.current = false;
+        }, 100);
+      }
+    });
   }, [instance, isReady]);
 
   return <div ref={containerRef} className="w-full h-full" />;
+}
+
+async function backendJsonToComment(item: CommentJSON): Promise<Comment$1 | undefined> {
+  const object = PSPDFKit.Comment.fromSerializableObject(item);
+
+  let comment;
+
+  if (object instanceof PSPDFKit.Comment) {
+    comment = new PSPDFKit.Comment({
+      ...object.toJSON(),
+      id: item.id,
+    });
+  } else {
+    return;
+  }
+
+  return comment;
 }
 
 async function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion, instance: Instance): Promise<Annotation | undefined> {
   const object = PSPDFKit.Annotations.fromSerializableObject(item);
 
   let annotation;
+
+
   if (object instanceof PSPDFKit.Annotations.CommentMarkerAnnotation) {
     annotation = new PSPDFKit.Annotations.CommentMarkerAnnotation({
       ...object.toJSON(),
