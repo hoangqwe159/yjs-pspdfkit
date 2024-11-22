@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import PSPDFKit, { Annotation, AnnotationJSONUnion, AnnotationsBackendJSONUnion, Instance } from "pspdfkit";
 import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
+// import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { useY } from "react-yjs";
 import { WebrtcProvider } from "y-webrtc";
@@ -9,11 +9,6 @@ import { WebrtcProvider } from "y-webrtc";
 interface PdfViewerComponentProps {
   document: string;
 }
-
-type Attachments1 = Record<string, {
-  binary: string;
-  contentType: string;
-}>;
 
 type Attachments = {
   binary: string;
@@ -25,19 +20,23 @@ const yArrayAnnotations = yDoc.getArray<AnnotationJSONUnion>('annotations');
 const yMapAttachments = yDoc.getMap<Attachments>('attachments');
 
 const provider = new WebrtcProvider('annotationss', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] });
+const indexeddbProvider = new IndexeddbPersistence('annotations', yDoc);
+
 
 export default function PdfViewerComponent({ document }: PdfViewerComponentProps) {
-  const indexeddbProvider = useMemo(() => new IndexeddbPersistence('annotations', yDoc), []);
   // const websocketProvider = useMemo(() => new WebsocketProvider('ws://localhost:1234/ws', 'annotations', yDoc), []);
   // const provider = useMemo(() => new WebrtcProvider('annotations', yDoc, { password: 'optional-room-password', signaling: [ 'ws://localhost:4444' ] }), []);
   window.yArray = yArrayAnnotations;
   window.yMap = yMapAttachments;
+  window.provider = provider;
+  window.yDoc = yDoc;
 
 
   const containerRef = useRef(null);
   const isHandlingYjsChange = useRef(false);
   const isHandlingPSPDFKitChange = useRef(false);
   const [isReady, setIsReady] = useState(false);
+  const [isWebRtcReady, setIsWebRtcReady] = useState(false);
 
   const yAnnotations = useY(yArrayAnnotations);
   const yAttachments = useY(yMapAttachments);
@@ -48,21 +47,43 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
     indexeddbProvider.on('synced', () => {
       setIsReady(true);
     });
-  }, [indexeddbProvider]);
+
+    provider.on("status", async (event) => {
+      console.log(yDoc.getXmlElement().length);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      console.log(yDoc.getXmlElement().length);
+
+
+      console.log('status', event);
+
+      setIsWebRtcReady(event.connected);
+      console.log(provider.connected);
+
+    });
+
+    provider.on("synced", (s) => {
+      console.log('synced', s);
+    });
+
+    provider.on("peers", (peers) => {
+      console.log('peers', peers);
+    });
+  }, []);
 
 
   useEffect(() => {
     const container = containerRef.current;
 
     (async function () {
-      if (!container || !isReady) return;
+      if (!container || !isReady || !isWebRtcReady) return;
       PSPDFKit.unload(container); // Ensure that there's only one PSPDFKit instance.
 
+      // We need to make sure that the annotations are loaded before PSPDFKit is
       const instance = await PSPDFKit.load({
         container,
         instantJSON: {
-          attachments: yMapAttachments.toJSON(),
           annotations: yArrayAnnotations.toArray(),
+          attachments: yMapAttachments.toJSON(),
           format: "https://pspdfkit.com/instant-json/v1",
         },
         document: "/document.pdf",
@@ -77,62 +98,11 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
     return () => {
       PSPDFKit.unload(container);
     };
-  }, [document, isReady]);
-
-  // useEffect(() => {
-  //   if (!instance) return;
-
-  //   if (isReady) return;
-
-  //   (async function  loadInstantJson() {
-  //     await instance.applyOperations([
-  //       {
-  //         type: 'applyInstantJson',
-  //         instantJson: {
-  //           attachments: yAttachments,
-  //           annotations: yAnnotations,
-  //           format: "https://pspdfkit.com/instant-json/v1",
-  //         },
-  //       },
-  //     ]);
-
-  //     setIsReady(true);
-  //   })();
-  // }, [instance, yAnnotations, isReady, yAttachments]);
+  }, [isReady, isWebRtcReady]);
 
   useEffect(() => {
     if (!instance) return;
     if (!isReady) return;
-
-    yMapAttachments.observe(async (event) => {
-      if (event.target !== yMapAttachments || isHandlingPSPDFKitChange.current) return;
-
-      // isHandlingYjsChange.current = true;
-      // console.log('yMap changed', event.changes);
-
-      // await instance.applyOperations([
-      //   {
-      //     type: 'applyInstantJson',
-      //     instantJson: {
-      //       attachments: yMapAttachments.toJSON(),
-      //       format: "https://pspdfkit.com/instant-json/v1",
-      //     },
-      //   },
-      // ])
-
-      // for (const key of event.changes.keys) {
-      //   const attachment = yMapAttachments.get(key);
-      //   if (!attachment) continue;
-
-      //   const blob = new Blob([attachment.binary], { type: attachment.contentType });
-      //   const binary = await blobToBinary(blob);
-
-      //   instance.getAttachment(key, binary);
-      // }
-
-      isHandlingYjsChange.current = false;
-    });
-
 
     yArrayAnnotations.observe(async (event) => {
       if (event.target !== yArrayAnnotations || isHandlingPSPDFKitChange.current) return;
@@ -234,8 +204,6 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
                   });
                 }
               }
-            } else if (jsonAnnotation.type === 'pspdfkit/media') {
-              if (jsonAnnotation.mediaAttachmentId) mediaIds.push(jsonAnnotation.mediaAttachmentId);
             }
 
             jsonAnnotations.push(jsonAnnotation);
