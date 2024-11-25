@@ -128,19 +128,22 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
       const filteredDeletedItems = deletedItems.filter((deletedItem) => !updatedItems.some((updatedItem) => updatedItem.id === deletedItem.id));
       const filteredAddedItems = addedItems.filter((addedItem) => !updatedItems.some((updatedItem) => updatedItem.id === addedItem.id));
 
-      // for (const item of filteredDeletedItems) {
-      //   await instance.deleteComment(item.id);
-      // }
+      for (const item of filteredDeletedItems) {
+        await instance.delete(item.id);
+      }
 
-      // for (const item of updatedItems) {
-      //   await instance.updateComment(item);
-      // }
+      for (const item of updatedItems) {
+        const comment = await backendJsonToComment(item);
+        if (!comment) continue;
+
+        await instance.update(comment);
+      }
 
       for (const item of filteredAddedItems) {
-        const annotation = await backendJsonToComment(item);
-        if (!annotation) continue;
+        const comment = await backendJsonToComment(item);
+        if (!comment) continue;
 
-        await instance.create(annotation);
+        await instance.create(comment);
       }
 
       isHandlingYjsChange.current = false;
@@ -207,10 +210,6 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
           isHandlingPSPDFKitChange.current = false;
         }, 100);
       }
-    });
-
-    instance.addEventListener('annotations.change', () => {
-      console.log('annotations.change');
     });
 
     // Handle annotation creation from PSPDFKit
@@ -320,6 +319,51 @@ export default function PdfViewerComponent({ document }: PdfViewerComponentProps
           }
 
           yArrayComments.push(jsonComments);
+        });
+      } finally {
+        setTimeout(() => {
+          isHandlingPSPDFKitChange.current = false;
+        }, 100);
+      }
+    });
+
+    instance.addEventListener('comments.update', async (comments) => {
+      if (isHandlingYjsChange.current) return;
+
+      isHandlingPSPDFKitChange.current = true;
+      try {
+        for (const comment of comments) {
+          const jsonComment = PSPDFKit.Comment.toSerializableObject(comment);
+          const index = yArrayComments.toArray().findIndex((a) => a.id === jsonComment.id);
+          if (index !== -1) {
+            yDoc.transact(() => {
+              yArrayComments.delete(index, 1);
+              yArrayComments.insert(index, [{
+                ...jsonComment,
+                createdAt: typeof jsonComment.createdAt === 'string' ? jsonComment.createdAt : jsonComment.createdAt.toISOString(),
+              }]);
+            });
+          }
+        }
+      } finally {
+        setTimeout(() => {
+          isHandlingPSPDFKitChange.current = false;
+        }, 100);
+      }
+    });
+
+    instance.addEventListener('comments.delete', async (comments) => {
+      if (isHandlingYjsChange.current) return;
+
+      isHandlingPSPDFKitChange.current = true;
+      try {
+        yDoc.transact(() => {
+          for (const comment of comments) {
+            const index = yArrayComments.toArray().findIndex((a) => a.id === comment.id);
+            if (index !== -1) {
+              yArrayComments.delete(index, 1);
+            }
+          }
         });
       } finally {
         setTimeout(() => {
