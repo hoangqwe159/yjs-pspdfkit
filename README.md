@@ -8,6 +8,11 @@ Install
 bun i
 ```
 
+Copy pspdfkit to public folder
+```
+cp -R ./node_modules/pspdfkit/dist/ ./public
+```
+
 Client
 ```
 bun dev
@@ -18,7 +23,7 @@ Websocket Server
 HOST=localhost PORT=1234 npx y-websocket
 ```
 
-WebRTC Server (only this one is working now)
+WebRTC Server
 ```
 PORT=4444 node node_modules/y-webrtc/bin/server.js
 ```

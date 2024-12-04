@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+public/pspdfkit-lib
+public/index.d.ts
+public/pspdfkit.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
