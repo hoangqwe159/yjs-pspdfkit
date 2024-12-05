@@ -1,0 +1,130 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 57079ef0ab2f945c3670d4919a72e891967e0d98..1f099b33f7c6f3329cd738e12b47a631dee4d3db 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -6040,12 +6040,12 @@ type AnnotationsUnionClass = {
+     [K in keyof AnnotationSerializerTypeMap]: Class<AnnotationSerializerTypeMap[K]['annotation']>;
+ }[keyof AnnotationSerializerTypeMap];
+ type ShapeAnnotationsUnion = PolylineAnnotation | PolygonAnnotation | LineAnnotation | RectangleAnnotation | EllipseAnnotation;
+-type AnnotationsBackendJSONUnion = {
++export type AnnotationsBackendJSONUnion = {
+     [K in keyof AnnotationSerializerTypeMap]: AnnotationSerializerTypeMap[K]['jsonForBackend'];
+ }[keyof AnnotationSerializerTypeMap];
+ type TextMarkupAnnotationsUnion = HighlightAnnotation | UnderlineAnnotation | StrikeOutAnnotation | SquiggleAnnotation | RedactionAnnotation;
+ 
+-type CommentJSON = {
++export type CommentJSON = {
+     id?: string | null;
+     type: 'pspdfkit/comment';
+     v: 2;
+@@ -6086,7 +6086,7 @@ type CommentProps$1 = {
+     isAnonymous?: boolean | null;
+ };
+ declare const Comment_base: Record$1.Factory<CommentProps$1>;
+-declare class Comment$1 extends Comment_base {
++export declare class Comment$1 extends Comment_base {
+     static toSerializableObject: (comment: Comment$1) => CommentJSON;
+     static fromSerializableObject: (comment: CommentJSON) => Comment$1;
+     getMentionedUserIds(): Set$1<string>;
+@@ -6371,7 +6371,7 @@ type BookmarkProps = {
+     action: Action | null;
+ };
+ declare const Bookmark_base: Record$1.Factory<BookmarkProps>;
+-declare class Bookmark$1 extends Bookmark_base {
++export declare class Bookmark$1 extends Bookmark_base {
+     id: ID$1;
+     action: Action;
+     static toSerializableObject: typeof toJSON;
+@@ -6474,7 +6474,7 @@ type ButtonFormFieldJSON = BaseFormFieldJSON & {
+ type SignatureFormFieldJSON = BaseFormFieldJSON & {
+     type: 'pspdfkit/form-field/signature';
+ };
+-type FormFieldJSON = ListBoxFormFieldJSON | ComboBoxFormFieldJSON | RadioButtonFormFieldJSON | CheckBoxFormFieldJSON | TextFormFieldJSON | ButtonFormFieldJSON | SignatureFormFieldJSON;
++export type FormFieldJSON = ListBoxFormFieldJSON | ComboBoxFormFieldJSON | RadioButtonFormFieldJSON | CheckBoxFormFieldJSON | TextFormFieldJSON | ButtonFormFieldJSON | SignatureFormFieldJSON;
+ 
+ type SerializedJSON = {
+     skippedPdfObjectIds?: number[];
+@@ -6735,7 +6735,7 @@ type RedactionAnnotationPreset = {
+     creatorName?: string;
+ };
+ 
+-type Change$1 = AnnotationsUnion | Bookmark$1 | FormField | FormFieldValue | Comment$1;
++export type Change$1 = AnnotationsUnion | Bookmark$1 | FormField | FormFieldValue | Comment$1;
+ 
+ type DocumentEditorUIHandler = {
+     setOperations: (callback: (stagedDocumentOperations: List<DocumentOperation | List<DocumentOperation>>) => List<DocumentOperation | List<DocumentOperation>>, clearPagesSelection?: boolean) => void | Promise<void>;
+@@ -7505,7 +7505,7 @@ type ActionJSON = {
+     script: string;
+     subactions?: Array<ActionJSON>;
+ };
+-type BookmarkJSON = {
++export type BookmarkJSON = {
+     v: 1;
+     type: 'pspdfkit/bookmark';
+     id: string;
+@@ -7725,7 +7725,7 @@ type WidgetAnnotationJSON = Omit<BaseAnnotationJSON, 'type'> & {
+ type CommentMarkerAnnotationJSON = Omit<BaseAnnotationJSON, 'type'> & {
+     type: 'pspdfkit/comment-marker';
+ };
+-type AnnotationJSONUnion = TextMarkupAnnotationJSON | TextAnnotationJSON | WidgetAnnotationJSON | RedactionAnnotationJSON | StampAnnotationJSON | NoteAnnotationJSON | LinkAnnotationJSON | InkAnnotationJSON | RectangleAnnotationJSON | PolylineAnnotationJSON | PolygonAnnotationJSON | LineAnnotationJSON | EllipseAnnotationJSON | ImageAnnotationJSON | UnknownAnnotationJSON | MediaAnnotationJSON | CommentMarkerAnnotationJSON;
++export type AnnotationJSONUnion = TextMarkupAnnotationJSON | TextAnnotationJSON | WidgetAnnotationJSON | RedactionAnnotationJSON | StampAnnotationJSON | NoteAnnotationJSON | LinkAnnotationJSON | InkAnnotationJSON | RectangleAnnotationJSON | PolylineAnnotationJSON | PolygonAnnotationJSON | LineAnnotationJSON | EllipseAnnotationJSON | ImageAnnotationJSON | UnknownAnnotationJSON | MediaAnnotationJSON | CommentMarkerAnnotationJSON;
+ 
+ declare class EventEmitter$1 {
+     listeners: Record<string, any>;
+@@ -33384,7 +33384,7 @@ declare const FormOption_base: Record$1.Factory<{
+ declare class FormOption extends FormOption_base {
+ }
+ 
+-declare class CheckBoxFormField extends FormField {
++export declare class CheckBoxFormField extends FormField {
+     values: List<string>;
+     defaultValues: List<string>;
+     options: List<FormOption>;
+@@ -33392,7 +33392,7 @@ declare class CheckBoxFormField extends FormField {
+     static defaultValues: IObject$1;
+ }
+ 
+-declare class ChoiceFormField extends FormField {
++export declare class ChoiceFormField extends FormField {
+     options: List<FormOption>;
+     values: List<string>;
+     defaultValues: List<string>;
+@@ -33401,17 +33401,17 @@ declare class ChoiceFormField extends FormField {
+     static defaultValues: IObject$1;
+ }
+ 
+-declare class ComboBoxFormField extends ChoiceFormField {
++export declare class ComboBoxFormField extends ChoiceFormField {
+     edit: boolean;
+     doNotSpellCheck: boolean;
+     static defaultValues: IObject$1;
+ }
+ 
+-declare class ListBoxFormField extends ChoiceFormField {
++export declare class ListBoxFormField extends ChoiceFormField {
+     additionalActions: FormFieldInputAdditionalActionsType | null | undefined;
+ }
+ 
+-declare class RadioButtonFormField extends FormField {
++export declare class RadioButtonFormField extends FormField {
+     noToggleToOff: boolean;
+     radiosInUnison: boolean;
+     value: string;
+@@ -33421,7 +33421,7 @@ declare class RadioButtonFormField extends FormField {
+     static defaultValues: IObject$1;
+ }
+ 
+-declare class TextFormField extends FormField {
++export declare class TextFormField extends FormField {
+     value: string;
+     defaultValue: string;
+     password: boolean;
+@@ -33434,7 +33434,7 @@ declare class TextFormField extends FormField {
+     static defaultValues: IObject$1;
+ }
+ 
+-declare class SignatureFormField extends FormField {
++export declare class SignatureFormField extends FormField {
+ }
+ 
+ interface IComparisonOperation {

@@ -40,5 +40,8 @@
     "vite-plugin-dynamic-import": "^1.6.0",
     "vite-plugin-static-copy": "^2.1.0",
     "vite-plugin-wasm": "^3.3.0"
+  },
+  "patchedDependencies": {
+    "pspdfkit@2024.8.0": "patches/pspdfkit@2024.8.0.patch"
   }
 }
