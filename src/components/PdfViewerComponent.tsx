@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import PSPDFKit, { Instance } from 'pspdfkit';
 import { useCollaboration } from './useCollaboration';
 
+
+const SIGNALING_SERVER = ['ws://localhost:4444'];
+
 export default function PdfViewerComponent() {
   const containerRef = useRef(null);
   const [instance, setInstance] = useState<Instance | null>(null);
 
-  const roomName = 'EXAMPLE_ROOM_NAME';
-  const yObject = useCollaboration(instance, roomName);
+  const roomName = 'EXAMPLE_ROOM_NAME_14';
+  const yObject = useCollaboration(instance, roomName, SIGNALING_SERVER, "password-secret");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -21,6 +24,7 @@ export default function PdfViewerComponent() {
       const instance = await PSPDFKit.load({
         container,
         enableHistory: true,
+        enableClipboardActions: true,
         instantJSON: yObject
           ? {
               annotations: yObject.yArrayAnnotations.toArray(),

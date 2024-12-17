@@ -154,15 +154,16 @@ export const useYjs = ({ roomName, signaling, password }: YjsConfig): YjsInterfa
   );
 };
 
-export const useCollaboration = (instance: Instance | null, roomName: string): YjsInterface => {
+export const useCollaboration = (instance: Instance | null, roomName: string, signaling: string[], password?: string): YjsInterface => {
   const isHandlingYjsChange = useRef(false);
   const isHandlingPSPDFKitChange = useRef(false);
   const config = useMemo(
     () => ({
       roomName,
-      signaling: ['ws://localhost:4444'], // TODO: wait real server
+      signaling,
+      password,
     }),
-    [roomName]
+    [password, roomName, signaling]
   );
 
   const yObject = useYjs(config);
@@ -339,7 +340,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -413,7 +414,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -434,7 +435,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -461,7 +462,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -488,7 +489,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -508,7 +509,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -533,7 +534,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -555,7 +556,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -575,7 +576,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -614,7 +615,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -636,7 +637,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -661,7 +662,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
 
@@ -694,7 +695,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string): Y
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
-        }, 100);
+        }, 500);
       }
     });
   }, [instance, yObject]);
@@ -803,16 +804,20 @@ async function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion, instan
 
     const jsonObject = object.toJSON();
     const currentAttachmentId = jsonObject.imageAttachmentId;
-    const currentAttachment = await getAttachment(instance, currentAttachmentId);
 
-    if (item.customData && !currentAttachment) {
+    if (item.customData) {
       const key = Object.keys(item.customData)[0];
       const attachment = item.customData[key] as AttachmentJson;
+      const currentAttachment = await getAttachment(instance, key);
 
-      const response = await fetch(attachment.binary);
-      const blob = await response.blob();
+      if (!currentAttachment) {
+        const response = await fetch(attachment.binary);
+        const blob = await response.blob();
 
-      attachmentId = await instance.createAttachment(blob);
+        attachmentId = await instance.createAttachment(blob);
+      } else {
+        attachmentId = key;
+      }
     }
 
     annotation = new PSPDFKit.Annotations.ImageAnnotation({
