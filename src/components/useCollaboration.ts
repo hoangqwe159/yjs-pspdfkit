@@ -303,6 +303,15 @@ export const useCollaboration = (instance: Instance | null, roomName: string, si
       }
 
       for (const item of updatedItems) {
+        const pageIndex = item.pageIndex;
+        const pageAnnotations = await instance.getAnnotations(pageIndex); 
+        const currentAnnotation = pageAnnotations.find((a) => a.id === item.id);
+        if (item.pdfObjectId && !currentAnnotation?.pdfObjectId) {
+          item.pdfObjectId = undefined;
+        } else if (!item.pdfObjectId && currentAnnotation?.pdfObjectId) {
+          item.pdfObjectId = currentAnnotation.pdfObjectId;
+        }
+
         const annotation = await backendJsonToAnnotation(item, instance);
         if (!annotation) continue;
 
