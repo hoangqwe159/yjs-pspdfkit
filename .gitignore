@@ -26,3 +26,6 @@ public/pspdfkit.js
 *.njsproj
 *.sln
 *.sw?
+
+# Ignore all files in server/uploads except for document.pdf
+server/uploads/*

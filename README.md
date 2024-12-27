@@ -1,38 +1,40 @@
-Demo
+## Demo
+![Demp](https://github.com/user-attachments/assets/b622e9ef-c2e5-49ec-b3fe-36d9fd95cb0a)
 
-![CleanShot 2024-12-05 at 11 23 17](https://github.com/user-attachments/assets/b622e9ef-c2e5-49ec-b3fe-36d9fd95cb0a)
+## App flow
+![App flow](image.png)
 
-Install bun
+## Install bun
 ```
 brew install oven-sh/bun/bun
 ```
 
-Install
+## Install packages
 ```
 bun i
 ```
 
-Copy pspdfkit to public folder
+## Copy pspdfkit to public folder
 ```
 cp -R ./node_modules/pspdfkit/dist/ ./public
 ```
 
-Client
+## Run Client
 ```
 bun dev
 ```
 
-Websocket Server 
+## Run Images and History Server
 ```
-HOST=localhost PORT=1234 npx y-websocket
+node server/server.js
 ```
 
-WebRTC Server (working)
+## RunWebRTC Server
 ```
 PORT=4444 node node_modules/y-webrtc/bin/server.js
 ```
 
-Document
+## Document
 - https://github.com/yjs/yjs
-- https://github.com/yjs/y-websocket
 - https://github.com/yjs/y-webrtc
+- https://www.nutrient.io/guides/web/annotations/introduction-to-annotations/what-are-annotations/

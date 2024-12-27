@@ -1,139 +1,122 @@
-#!/usr/bin/env node
+import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import cors from 'cors';
+import { randomUUID } from 'crypto';
 
-import { WebSocketServer } from 'ws'
-import http from 'http'
-import * as map from 'lib0/map'
+// Define __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const wsReadyStateConnecting = 0
-const wsReadyStateOpen = 1
-const wsReadyStateClosing = 2 // eslint-disable-line
-const wsReadyStateClosed = 3 // eslint-disable-line
+const app = express();
+const port = process.env.PORT || 3000;
 
-const pingTimeout = 30000
+// Enable CORS for all routes
+app.use(cors());
 
-const port = process.env.PORT || 4444
-const wss = new WebSocketServer({ noServer: true })
+// Set up multer for file uploads
 
-const server = http.createServer((request, response) => {
-  response.writeHead(200, { 'Content-Type': 'text/plain' })
-  response.end('okay')
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, 'uploads')
+    },
+    filename: function (req, file, cb) {
+      cb(null, file.originalname)
+    }
 })
 
-/**
- * Map froms topic-name to set of subscribed clients.
- * @type {Map<string, Set<any>>}
- */
-const topics = new Map()
+const upload = multer({ storage: storage })
 
-/**
- * @param {any} conn
- * @param {object} message
- */
-const send = (conn, message) => {
-  if (conn.readyState !== wsReadyStateConnecting && conn.readyState !== wsReadyStateOpen) {
-    conn.close()
-  }
-  try {
-    conn.send(JSON.stringify(message))
-  } catch (e) {
-    conn.close()
-  }
-}
+// In-memory storage for binary data
+let binaryData = null;
 
-/**
- * Setup a new client
- * @param {any} conn
- */
-const onconnection = conn => {
-  /**
-   * @type {Set<string>}
-   */
-  const subscribedTopics = new Set()
-  let closed = false
-  // Check if connection is still alive
-  let pongReceived = true
-  const pingInterval = setInterval(() => {
-    if (!pongReceived) {
-      conn.close()
-      clearInterval(pingInterval)
+// Endpoint to upload a PDF file
+app.post('/upload-pdf', upload.single('pdf'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  // Move the file to a permanent location
+  const tempPath = req.file.path;
+  const targetPath = path.join(__dirname, 'uploads', 'document.pdf');
+
+  fs.rename(tempPath, targetPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to save file' });
+    }
+    res.status(200).json({ message: 'PDF file uploaded successfully' });
+  });
+});
+
+// Endpoint to upload binary data
+app.post('/upload-binary', express.raw({ type: 'application/octet-stream', limit: '10mb' }), (req, res) => {
+  binaryData = req.body;
+  console.log('Binary data uploaded:', binaryData.length, 'bytes');
+  res.status(200).json({ message: 'Binary data uploaded successfully' });
+});
+
+// Endpoint to upload image file and return id as image name
+app.post('/upload-image', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  // Generate a unique ID for the image
+  const imageId = randomUUID();
+  const ext = path.extname(req.file.originalname);
+  const targetPath = path.join(__dirname, 'uploads', `${imageId}${ext}`);
+
+  // Move the file to a permanent location with the unique ID as the name
+  fs.rename(req.file.path, targetPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to save image file' });
+    }
+    res.status(200).json({ message: 'Image file uploaded successfully', id: imageId });
+  });
+});
+
+// Endpoint to retrieve an image file by ID
+app.get('/get-image/:id', (req, res) => {
+  const imageId = req.params.id;
+  const uploadsDir = path.join(__dirname, 'uploads');
+
+  // Search for the file with the given ID and any extension
+  fs.readdir(uploadsDir, (err, files) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to read uploads directory' });
+    }
+
+    const imageFile = files.find(file => file.startsWith(imageId));
+    if (imageFile) {
+      const imagePath = path.join(uploadsDir, imageFile);
+      res.sendFile(imagePath);
     } else {
-      pongReceived = false
-      try {
-        conn.ping()
-      } catch (e) {
-        conn.close()
-      }
+      res.status(404).json({ error: 'Image not found' });
     }
-  }, pingTimeout)
-  conn.on('pong', () => {
-    pongReceived = true
-  })
-  conn.on('close', () => {
-    subscribedTopics.forEach(topicName => {
-      const subs = topics.get(topicName) || new Set()
-      subs.delete(conn)
-      if (subs.size === 0) {
-        topics.delete(topicName)
-      }
-    })
-    subscribedTopics.clear()
-    closed = true
-  })
-  conn.on('message', /** @param {object} message */ message => {
-    if (typeof message === 'string' || message instanceof Buffer) {
-      message = JSON.parse(message)
-    }
-    if (message && message.type && !closed) {
-      switch (message.type) {
-        case 'subscribe':
-          /** @type {Array<string>} */ (message.topics || []).forEach(topicName => {
-            if (typeof topicName === 'string') {
-              // add conn to topic
-              const topic = map.setIfUndefined(topics, topicName, () => new Set())
-              topic.add(conn)
-              // add topic to conn
-              subscribedTopics.add(topicName)
-            }
-          })
-          break
-        case 'unsubscribe':
-          /** @type {Array<string>} */ (message.topics || []).forEach(topicName => {
-            const subs = topics.get(topicName)
-            if (subs) {
-              subs.delete(conn)
-            }
-          })
-          break
-        case 'publish':
-          if (message.topic) {
-            const receivers = topics.get(message.topic)
-            if (receivers) {
-              message.clients = receivers.size
-              receivers.forEach(receiver =>
-                send(receiver, message)
-              )
-            }
-          }
-          break
-        case 'ping':
-          send(conn, { type: 'pong' })
-      }
-    }
-  })
-}
-wss.on('connection', onconnection)
+  });
+});
 
-server.on('upgrade', (request, socket, head) => {
-  // You may check auth of request here..
-  /**
-   * @param {any} ws
-   */
-  const handleAuth = ws => {
-    wss.emit('connection', ws, request)
+// Endpoint to retrieve the PDF file
+app.get('/get-pdf', (req, res) => {
+  const filePath = path.join(__dirname, 'uploads', 'document.pdf');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ error: 'PDF file not found' });
   }
-  wss.handleUpgrade(request, socket, head, handleAuth)
-})
+});
 
-server.listen(port)
+// Endpoint to retrieve the binary data
+app.get('/get-binary', (req, res) => {
+  if (binaryData) {
+    res.type('application/octet-stream').send(binaryData);
+  } else {
+    res.status(404).json({ error: 'Binary data not found' });
+  }
+});
 
-console.log('Signaling server running on localhost:', port)
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
+});

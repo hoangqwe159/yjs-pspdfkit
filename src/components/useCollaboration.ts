@@ -24,8 +24,7 @@ import { WebrtcProvider } from 'y-webrtc';
 type FormFiledUnion = ListBoxFormField | ComboBoxFormField | RadioButtonFormField | CheckBoxFormField | TextFormField | ButtonFormField | SignatureFormField;
 
 type AttachmentJson = {
-  binary: string;
-  contentType: string;
+  customAttachmentId: string;
 };
 
 export type FormFieldValueJson = {
@@ -57,6 +56,7 @@ type YjsInterface =
     }
   | undefined;
 
+// Initialize Yjs and connect to the room
 export const useYjs = ({ roomName, signaling, password }: YjsConfig): YjsInterface => {
   const [isIndexeddbReady, setIndexeddbReady] = useState(false);
   const [isWebRtcReady, setIsWebRtcReady] = useState(false);
@@ -133,6 +133,36 @@ export const useYjs = ({ roomName, signaling, password }: YjsConfig): YjsInterfa
     };
   }, [yObject]);
 
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yObject = yObject;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yDoc = yObject?.yDoc;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yArrayAnnotations = yObject?.yArrayAnnotations;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yMapAttachments = yObject?.yMapAttachments;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yArrayComments = yObject?.yArrayComments;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yArrayBookmarks = yObject?.yArrayBookmarks;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yArrayFormFields = yObject?.yArrayFormFields;
+  // @ts-expect-error: Expose Yjs object to the window
+  window.yArrayFormFieldValues = yObject?.yArrayFormFieldValues
+  // @ts-expect-error: Expose Yjs object to the window
+  window.clearAll = () => {
+    yObject?.yArrayAnnotations.delete(0, yObject?.yArrayAnnotations.length);
+    yObject?.yMapAttachments.clear();
+    yObject?.yArrayComments.delete(0, yObject?.yArrayComments.length);
+    yObject?.yArrayBookmarks.delete(0, yObject?.yArrayBookmarks.length);
+    yObject?.yArrayFormFields.delete(0, yObject?.yArrayFormFields.length);
+    yObject?.yArrayFormFieldValues.delete(0, yObject?.yArrayFormFieldValues.length);
+  }
+  // @ts-expect-error: Expose Yjs object to the window
+  window.getInstantHistory = () => {
+    return yObject?.yDoc.toJSON();
+  }
+
   return useMemo(
     () =>
       yObject
@@ -154,9 +184,12 @@ export const useYjs = ({ roomName, signaling, password }: YjsConfig): YjsInterfa
   );
 };
 
+// Observes Yjs changes
+// Do the Yjs transaction when the PSPDFKit changes
 export const useCollaboration = (instance: Instance | null, roomName: string, signaling: string[], password?: string): YjsInterface => {
   const isHandlingYjsChange = useRef(false);
   const isHandlingPSPDFKitChange = useRef(false);
+
   const config = useMemo(
     () => ({
       roomName,
@@ -172,7 +205,10 @@ export const useCollaboration = (instance: Instance | null, roomName: string, si
     if (!instance) return;
     if (!yObject) return;
 
-    const { yDoc, yArrayAnnotations, yMapAttachments, yArrayComments, yArrayBookmarks, yArrayFormFields, yArrayFormFieldValues, isIndexeddbReady, isWebRtcReady } = yObject;
+    // @ts-expect-error: Expose Yjs object to the window
+    window.instance = instance;
+
+    const { yDoc, yArrayAnnotations, yArrayComments, yArrayBookmarks, yArrayFormFields, yArrayFormFieldValues, isIndexeddbReady, isWebRtcReady } = yObject;
 
     if (!isIndexeddbReady || !isWebRtcReady) return;
 
@@ -359,7 +395,6 @@ export const useCollaboration = (instance: Instance | null, roomName: string, si
 
       isHandlingPSPDFKitChange.current = true;
       try {
-        const mediaIds: string[] = [];
         yDoc.transact(async () => {
           const jsonAnnotations: AnnotationJSONUnion[] = [];
           for (const annotation of annotations) {
@@ -368,22 +403,11 @@ export const useCollaboration = (instance: Instance | null, roomName: string, si
             if (jsonAnnotation.type === 'pspdfkit/image') {
               if (jsonAnnotation.imageAttachmentId) {
                 const blob = await instance.getAttachment(jsonAnnotation.imageAttachmentId);
-                const binary = await blobToBase64(blob);
-                const instantJson = await instance.exportInstantJSON();
+                const customAttachmentId = await uploadImage(blob);
 
                 jsonAnnotation.customData = {
-                  [jsonAnnotation.imageAttachmentId]: {
-                    binary,
-                    contentType: blob.type,
-                  },
+                  customAttachmentId  
                 };
-
-                if (instantJson.attachments) {
-                  yMapAttachments.set(jsonAnnotation.imageAttachmentId, {
-                    binary: instantJson.attachments[jsonAnnotation.imageAttachmentId].binary,
-                    contentType: instantJson.attachments[jsonAnnotation.imageAttachmentId].contentType,
-                  });
-                }
               }
             } else if (jsonAnnotation.type === 'pspdfkit/widget') {
               const formFieldName = jsonAnnotation.formFieldName;
@@ -403,23 +427,6 @@ export const useCollaboration = (instance: Instance | null, roomName: string, si
 
           yArrayAnnotations.push(jsonAnnotations);
         });
-
-        if (mediaIds.length) {
-          const instantJson = await instance.exportInstantJSON();
-
-          yDoc.transact(() => {
-            for (const mediaId of mediaIds) {
-              if (!instantJson.attachments) return;
-              const attachment = instantJson.attachments[mediaId];
-              if (!attachment) continue;
-
-              yMapAttachments.set(mediaId, {
-                binary: attachment.binary,
-                contentType: attachment.contentType,
-              });
-            }
-          });
-        }
       } finally {
         setTimeout(() => {
           isHandlingPSPDFKitChange.current = false;
@@ -712,6 +719,7 @@ export const useCollaboration = (instance: Instance | null, roomName: string, si
   return yObject;
 };
 
+// #region Bunch of utils
 async function backendJsonToFormField(item: FormFieldJSON): Promise<FormFiledUnion | undefined> {
   const object = PSPDFKit.FormFields.fromSerializableObject(item);
 
@@ -810,26 +818,30 @@ async function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion, instan
     });
   } else if (object instanceof PSPDFKit.Annotations.ImageAnnotation) {
     let attachmentId: string | undefined;
+    let isError =  false;
 
     const jsonObject = object.toJSON();
     const currentAttachmentId = jsonObject.imageAttachmentId;
 
-    if (item.customData) {
-      const key = Object.keys(item.customData)[0];
-      const attachment = item.customData[key] as AttachmentJson;
-      const currentAttachment = await getAttachment(instance, key);
+    if (item.customData && currentAttachmentId) {
+      const attachment = (item.customData as AttachmentJson).customAttachmentId;
+      const currentAttachment = await getAttachment(instance, currentAttachmentId);
 
       if (!currentAttachment) {
-        const response = await fetch(attachment.binary);
-        const blob = await response.blob();
+        // Get the image from server
+        const blob = await getImage(attachment);
 
-        attachmentId = await instance.createAttachment(blob);
+        if (blob) {
+          attachmentId = await instance.createAttachment(blob);
+        } else {
+          isError = true;
+        }
       } else {
-        attachmentId = key;
+        attachmentId = currentAttachmentId;
       }
     }
 
-    annotation = new PSPDFKit.Annotations.ImageAnnotation({
+    annotation = isError ? undefined : new PSPDFKit.Annotations.ImageAnnotation({
       ...jsonObject,
       imageAttachmentId: attachmentId ?? currentAttachmentId,
       id: item.id,
@@ -931,10 +943,19 @@ async function backendJsonToAnnotation(item: AnnotationsBackendJSONUnion, instan
     return;
   }
 
-  return formField ? [annotation, formField] : [annotation];
+  const result = [];
+  if (annotation) {
+    result.push(annotation);
+  }
+
+  if (formField) {
+    result.push(formField);
+  }
+
+  return result;
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
+export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -961,4 +982,116 @@ export function isYDocEmpty(yObject: YjsInterface): boolean {
   const { yArrayAnnotations, yMapAttachments, yArrayComments, yArrayBookmarks, yArrayFormFields, yArrayFormFieldValues } = yObject;
 
   return yArrayAnnotations.length === 0 && yMapAttachments.size === 0 && yArrayComments.length === 0 && yArrayBookmarks.length === 0 && yArrayFormFields.length === 0 && yArrayFormFieldValues.length === 0;
+}
+
+export async function getPdf() {
+  try {
+    const response = await fetch('http://localhost:3000/get-pdf');
+
+    if (response.ok) {
+      const arrayBuffer = await response.arrayBuffer();
+      return arrayBuffer;
+    } else {
+      console.error('Failed to get PDF file');
+    }
+  } catch (error) {
+    console.error('Error getting PDF file:', error);
+  }
+}
+
+export async function getBinaryData() {
+  try {
+    const response = await fetch('http://localhost:3000/get-binary');
+
+    if (response.ok) {
+      const arrayBuffer = await response.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    } else {
+      console.error('Failed to get binary data');
+    }
+  } catch (error) {
+    console.error('Error getting binary data:', error);
+  }
+}
+
+export async function uploadImage(blob: Blob): Promise<string | undefined> {
+  const formData = new FormData();
+  formData.append('file', blob);
+
+  try {
+    const response = await fetch('http://localhost:3000/upload-image', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      const json = await response.json();
+      return json.id;
+    } else {
+      console.error('Failed to upload blob');
+    }
+  } catch (error) {
+    console.error('Error uploading blob:', error);
+  }
+}
+
+export async function getImage(id: string): Promise<Blob | undefined> {
+  try {
+    const response = await fetch(`http://localhost:3000/get-image/${id}`);
+
+    if (response.ok) {
+      const blob = await response.blob();
+      return blob;
+    } else {
+      console.error('Failed to get blob');
+    }
+  } catch (error) {
+    console.error('Error getting blob:', error);
+  }
+}
+
+export async function uploadPdf(file: File) {
+  const formData = new FormData();
+  formData.append('pdf', file);
+
+  try {
+    const response = await fetch('http://localhost:3000/upload-pdf', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      console.log('PDF file uploaded successfully');
+    } else {
+      console.error('Failed to upload PDF file');
+    }
+  } catch (error) {
+    console.error('Error uploading PDF file:', error);
+  }
+}
+
+export async function uploadBinaryData(data: Uint8Array) {
+  try {
+    const response = await fetch('http://localhost:3000/upload-binary', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      body: data,
+    });
+
+    if (response.ok) {
+      console.log('Binary data uploaded successfully');
+    } else {
+      console.error('Failed to upload binary data');
+    }
+  } catch (error) {
+    console.error('Error uploading binary data:', error);
+  }
+}
+
+export function cloneArrayBuffer(buffer: ArrayBuffer): ArrayBuffer {
+  const clonedBuffer = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(clonedBuffer).set(new Uint8Array(buffer));
+  return clonedBuffer;
 }
